@@ -98,7 +98,7 @@ def health_check():
         return {"status": "❌ error", "detail": str(e)}, 500
 
 # ⭐ Importar routers (Mantenemos tu estructura original intacta)
-from serv_pedidos_v2 import router as router_v2  
+from serv_pedidos_v3 import router as router_v3  
 
 # Nota: Si NO tienes un archivo llamado 'serv_pedidos_v3.py', deja comentada la siguiente línea:
 # from serv_pedidos_v3 import router as router_v3
