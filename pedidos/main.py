@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles  # ⭐ AGREGADO: Para servir la interfaz web
 from datetime import timedelta
 import sys
 import os
@@ -16,8 +17,7 @@ from auth.security import (
 
 app = FastAPI(
     title="Departamento de Pedidos",
-    description="Servicio de Pedidos V3 con Base de Datos y Autenticación JWT\n\n" \
-    "Ejecutar en puerto **8002** y asegurarse de que los servicios de Clientes (8000), Productos (8011) e Inventario (8003) estén activos.",
+    description="Servicio de Pedidos (Orquestador) con Base de Datos, RabbitMQ y Autenticación JWT",
     version="3.0.0",
     contact={
         "name": "Arturo Barajas, Profesor de SOA - TecNM Querétaro",
@@ -32,7 +32,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ⭐ ENDPOINT DE LOGIN (igual que antes)
+# ⭐ AGREGADO: Crear carpeta static y montar los archivos (index.html)
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# ⭐ ENDPOINT DE LOGIN
 @app.post("/auth/token", response_model=Token, tags=["Autenticación"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     """**Obtiene un token de acceso JWT.**"""
@@ -62,28 +66,43 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 def root():
     return {
         "servicio": "Departamento de Pedidos",
-        "version": "3.0.0 (Base de Datos + Auth)",
-        "versiones": {
-            "v2": "/v2/pedidos (CSV + RabbitMQ)",
-            "v3": "/v3/pedidos (PostgreSQL + Auth)"  # ← Nuevo
-        },
+        "version": "3.0.0 (Orquestador con BD + Auth)",
+        "web_ui": "/static/index.html",  # ⭐ AGREGADO: Enlace a tu interfaz gráfica
         "auth": "/auth/token",
         "docs": "/docs",
+        "health": "/health",
         "usuarios_prueba": {
             "admin": "admin123",
             "usuario": "usuario123"
         },
         "servicios_dependientes": {
             "clientes": "http://localhost:8000/v2/clientes",
-            "productos": "http://localhost:8011/v3/productos",  # ← Puerto actualizado
+            "productos": "http://localhost:8011/v3/productos",
             "inventario": "http://localhost:8003/v2/inventario"
         }
     }
 
-# ⭐ Importar routers (V2 y V3)
-from serv_pedidos_v2 import router as router_v2  # ← Tu archivo actual
-from serv_pedidos_v3 import router as router_v3  # ← Nuevo archivo para V3
+# ⭐ AGREGADO: Endpoint para verificar que la BD está conectada (clave para la demo)
+@app.get("/health", tags=["Health"])
+def health_check():
+    try:
+        from coneeccion import ejecutar_consulta
+        resultado = ejecutar_consulta("SELECT current_database(), current_user;")
+        return {
+            "status": "✅ ok",
+            "service": "pedidos",
+            "database": resultado[0]['current_database'],
+            "message": "Conectado a PostgreSQL en Render"
+        }
+    except Exception as e:
+        return {"status": "❌ error", "detail": str(e)}, 500
+
+# ⭐ Importar routers (Mantenemos tu estructura original intacta)
+from serv_pedidos_v2 import router as router_v2  
+
+# Nota: Si NO tienes un archivo llamado 'serv_pedidos_v3.py', deja comentada la siguiente línea:
+# from serv_pedidos_v3 import router as router_v3
 
 # ⭐ Incluir routers con prefijos de versión
-app.include_router(router_v2, prefix="/v2", tags=["Versión 2 - CSV"])
-app.include_router(router_v3, prefix="/v3", tags=["Versión 3 - BD"])  # ← Nuevo
+app.include_router(router_v2, prefix="/v2", tags=["Pedidos v2 (Orquestador BD)"])
+# app.include_router(router_v3, prefix="/v3", tags=["Versión 3 - BD"])
