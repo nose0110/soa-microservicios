@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.staticfiles import StaticFiles  # ⭐ AGREGADO: Para servir el index.html
 from datetime import timedelta
 import sys
 import os
@@ -20,16 +21,9 @@ from auth.security import (
 
 app = FastAPI(
     title="Departamento de Productos",
-    description="Servicio de Productos con versionado y autenticación JWT\n\n" \
-    "**Versiones Disponibles:**\n" \
-    "- V1: Python (campos básicos)\n" \
-    "- V2: Python (campos extendidos)\n" \
-    "- V3: Node.js (multi-lenguaje)\n\n" \
-    "Ejecutar en puerto **8001** y asegurarse de que los servicios de Pedidos (8002) y Clientes (8000) estén activos.",
+    description="Servicio de Productos con versionado y autenticación JWT",
     version="3.0.0",
-    contact={
-        "name": "Arturo Barajas, Profesor de SOA - TecNM Querétaro",
-    }
+    contact={"name": "Arturo Barajas, Profesor de SOA - TecNM Querétaro"}
 )
 
 app.add_middleware(
@@ -40,12 +34,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# ⭐ AGREGADO: Montar carpeta 'static' para la interfaz web (index.html)
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 # ⭐ ENDPOINT DE LOGIN
 @app.post("/auth/token", response_model=Token, tags=["Autenticación"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    """**Obtiene un token de acceso JWT.**"""
     usuario = await autenticar_usuario(form_data.username, form_data.password)
-    
     if not usuario:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -57,7 +53,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         data={"sub": usuario["username"], "rol": usuario["rol"]},
         expires_delta=timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
-    
     return {
         "access_token": access_token, 
         "token_type": "bearer",
@@ -70,16 +65,16 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 def root():
     return {
         "servicio": "Departamento de Productos",
-        "version": "3.0.0 (V1, V2, V3)",
+        "version": "3.0.0 (V1, V2, V3 Proxy)",
         "versiones": {
-            "v1": "/v1/productos (Python)",
-            "v2": "/v2/productos (Python)",
-            "v3": "/v3/productos (Node.js - proxy)"
+            "v1": "/v1/productos (Python Básico)",
+            "v2": "/v2/productos (Python Extendido + BD)",
+            "v3": "/v3/productos (Node.js - Proxy)"
         },
+        "web_ui": "/static/index.html",  # ⭐ AGREGADO: Enlace a la interfaz
         "auth": "/auth/token",
         "docs": "/docs",
-        "usuarios_prueba": {"admin": "admin123", "usuario": "usuario123"},
-        "puertos": {"python": 8001, "nodejs": 8011}
+        "usuarios_prueba": {"admin": "admin123", "usuario": "usuario123"}
     }
 
 # ⭐ Importar routers Python
@@ -90,6 +85,8 @@ app.include_router(router_v1, prefix="/v1", tags=["V1 - Python"])
 app.include_router(router_v2, prefix="/v2", tags=["V2 - Python"])
 
 # ==================== ENDPOINTS V3 (Node.js) - PROXY ====================
+# ⭐ NOTA: Si no tienes el servicio Node.js corriendo, esto devolverá 503.
+# ¡Esto es PERFECTO para tu video demo de "Manejo de Errores 503"!
 
 NODE_BASE_URL = "http://localhost:8011/v3"
 
@@ -99,24 +96,24 @@ def _get_token_from_request(request: Request) -> str:
 
 @app.get("/v3/productos", tags=["V3 - Node.js"], dependencies=[Depends(requerir_autenticacion)])
 async def v3_get_productos(request: Request, token_data: TokenData = Depends(requerir_autenticacion)):
-    """**V3 Node.js - Listar productos** (proxy)"""
     try:
         token = _get_token_from_request(request)
         resp = requests.get(f"{NODE_BASE_URL}/productos", headers={"Authorization": f"Bearer {token}"}, timeout=5)
+        resp.raise_for_status()
         return resp.json()
     except requests.exceptions.ConnectionError:
-        raise HTTPException(status_code=503, detail="Servicio Node.js no disponible en puerto 8011")
+        raise HTTPException(status_code=503, detail="Servicio Node.js no disponible (Error 503 intencional para demo)")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error proxy: {str(e)}")
 
 @app.get("/v3/productos/{id_producto}", tags=["V3 - Node.js"], dependencies=[Depends(requerir_autenticacion)])
 async def v3_get_producto(id_producto: int, request: Request, token_data: TokenData = Depends(requerir_autenticacion)):
-    """**V3 Node.js - Obtener producto por ID** (proxy)"""
     try:
         token = _get_token_from_request(request)
         resp = requests.get(f"{NODE_BASE_URL}/productos/{id_producto}", headers={"Authorization": f"Bearer {token}"}, timeout=5)
         if resp.status_code == 404:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
+        resp.raise_for_status()
         return resp.json()
     except requests.exceptions.ConnectionError:
         raise HTTPException(status_code=503, detail="Servicio Node.js no disponible")
@@ -127,10 +124,10 @@ async def v3_get_producto(id_producto: int, request: Request, token_data: TokenD
 
 @app.post("/v3/productos", tags=["V3 - Node.js"], dependencies=[Depends(requerir_admin)], status_code=201)
 async def v3_post_producto(request: Request, nuevo: dict, token_data: TokenData = Depends(requerir_admin)):
-    """**V3 Node.js - Registrar producto** (proxy, solo admin)"""
     try:
         token = _get_token_from_request(request)
         resp = requests.post(f"{NODE_BASE_URL}/productos", headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=nuevo, timeout=5)
+        resp.raise_for_status()
         return resp.json()
     except requests.exceptions.ConnectionError:
         raise HTTPException(status_code=503, detail="Servicio Node.js no disponible")
@@ -139,12 +136,12 @@ async def v3_post_producto(request: Request, nuevo: dict, token_data: TokenData 
 
 @app.patch("/v3/productos/{id_producto}", tags=["V3 - Node.js"], dependencies=[Depends(requerir_admin)])
 async def v3_patch_producto(id_producto: int, request: Request, update: dict, token_data: TokenData = Depends(requerir_admin)):
-    """**V3 Node.js - Actualizar producto** (proxy, solo admin)"""
     try:
         token = _get_token_from_request(request)
         resp = requests.patch(f"{NODE_BASE_URL}/productos/{id_producto}", headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, json=update, timeout=5)
         if resp.status_code == 404:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
+        resp.raise_for_status()
         return resp.json()
     except requests.exceptions.ConnectionError:
         raise HTTPException(status_code=503, detail="Servicio Node.js no disponible")
@@ -155,12 +152,12 @@ async def v3_patch_producto(id_producto: int, request: Request, update: dict, to
 
 @app.delete("/v3/productos/{id_producto}", tags=["V3 - Node.js"], dependencies=[Depends(requerir_admin)])
 async def v3_delete_producto(id_producto: int, request: Request, token_data: TokenData = Depends(requerir_admin)):
-    """**V3 Node.js - Eliminar producto** (proxy, solo admin)"""
     try:
         token = _get_token_from_request(request)
         resp = requests.delete(f"{NODE_BASE_URL}/productos/{id_producto}", headers={"Authorization": f"Bearer {token}"}, timeout=5)
         if resp.status_code == 404:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
+        resp.raise_for_status()
         return resp.json()
     except requests.exceptions.ConnectionError:
         raise HTTPException(status_code=503, detail="Servicio Node.js no disponible")

@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>📦 Productos - SOA</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f4f4f9; }
+        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { background: #4CAF50; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #45a049; }
+        .hidden { display: none; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background: #2196F3; color: white; }
+        .error { color: red; font-size: 0.9rem; }
+        .success { color: green; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>📦 Gestión de Productos</h1>
+        
+        <!-- LOGIN -->
+        <div id="login-section">
+            <h3>🔐 Iniciar Sesión</h3>
+            <input type="text" id="username" placeholder="Usuario (ej: admin)">
+            <input type="password" id="password" placeholder="Contraseña (ej: admin123)">
+            <button onclick="login()">Entrar</button>
+            <p id="login-error" class="error"></p>
+        </div>
+        
+        <!-- CRUD -->
+        <div id="crud-section" class="hidden">
+            <button onclick="logout()" style="background: #f44336; width: auto;">🚪 Cerrar Sesión</button>
+            <button onclick="cargarProductos()" style="background: #2196F3; width: auto; float: right;">🔄 Actualizar</button>
+            <br><br>
+            
+            <h3>➕ Nuevo Producto</h3>
+            <input type="text" id="descripcion" placeholder="Descripción del producto *">
+            <input type="number" id="precio" placeholder="Precio * (ej: 150.50)" step="0.01">
+            <button onclick="crearProducto()">Guardar Producto</button>
+            <p id="msg"></p>
+            
+            <h3>📋 Lista de Productos</h3>
+            <table id="tabla">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Descripción</th>
+                        <th>Precio</th>
+                        <th>Activo</th>
+                        <th>Actualizado</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        let token = '';
+
+        async function login() {
+            const fd = new URLSearchParams();
+            fd.append('username', document.getElementById('username').value);
+            fd.append('password', document.getElementById('password').value);
+            
+            try {
+                const res = await fetch('/auth/token', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: fd
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || 'Credenciales incorrectas');
+                }
+                const data = await res.json();
+                token = data.access_token;
+                
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('crud-section').classList.remove('hidden');
+                cargarProductos();
+            } catch (e) {
+                document.getElementById('login-error').textContent = e.message;
+            }
+        }
+
+        function logout() {
+            token = '';
+            document.getElementById('crud-section').classList.add('hidden');
+            document.getElementById('login-section').classList.remove('hidden');
+            document.getElementById('msg').textContent = '';
+        }
+
+        async function cargarProductos() {
+            try {
+                const res = await fetch('/v2/productos', {
+                    headers: {'Authorization': `Bearer ${token}`}
+                });
+                if (!res.ok) throw new Error('Error al cargar');
+                
+                const productos = await res.json();
+                document.querySelector('#tabla tbody').innerHTML = productos.map(p => `
+                    <tr>
+                        <td>${p.id_producto || p.producto_id}</td>
+                        <td>${p.descripcion}</td>
+                        <td>$${parseFloat(p.precio).toFixed(2)}</td>
+                        <td>${p.activo ? '✅' : '❌'}</td>
+                        <td>${p.updated_at || '-'}</td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function crearProducto() {
+            const nuevo = {
+                descripcion: document.getElementById('descripcion').value,
+                precio: parseFloat(document.getElementById('precio').value)
+            };
+            
+            const msgEl = document.getElementById('msg');
+            msgEl.textContent = 'Guardando...';
+            msgEl.className = '';
+
+            try {
+                const res = await fetch('/v2/productos', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(nuevo)
+                });
+                
+                if (!res.ok) {
+                    const err = await res.json();
+                    const errorMsg = Array.isArray(err.detail) 
+                        ? err.detail.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ') 
+                        : (err.detail || 'Error desconocido');
+                    throw new Error(errorMsg);
+                }
+                
+                msgEl.textContent = '✅ Producto creado exitosamente';
+                msgEl.className = 'success';
+                
+                // Limpiar campos
+                document.getElementById('descripcion').value = '';
+                document.getElementById('precio').value = '';
+                
+                cargarProductos();
+            } catch (e) {
+                msgEl.textContent = '❌ ' + e.message;
+                msgEl.className = 'error';
+            }
+        }
+    </script>
+</body>
+</html>
