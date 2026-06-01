@@ -1,17 +1,20 @@
-
+import os
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-DB_CONFIG = {
-    "host": "dpg-d8erk01o3t8c73fpjd90-a.oregon-postgres.render.com",
-    "port": 5432,
-    "database": "shopnow_db_tntz",
-    "user": "shopnow",
-    "password": "UffNPW73ok38VpCf4DRSJQPWeDGgiPpo"  # ⭐ Pon la real aquí
-}
-
 def get_connection():
-    return psycopg2.connect(**DB_CONFIG)
+    """Obtener conexión desde DATABASE_URL de entorno"""
+    
+    # 🔑 Leer variable de entorno (Render la inyecta automáticamente)
+    database_url = os.environ.get("DATABASE_URL")
+    
+    if not database_url:
+        # Fallback para desarrollo local (OPCIONAL)
+        # ⚠️ NUNCA uses la contraseña real de Render aquí
+        database_url = "postgresql://shopnow:localhost_password@localhost:5432/shopnow_db"
+    
+    # Conectar con SSL obligatorio (Render lo requiere)
+    return psycopg2.connect(database_url, sslmode='require')
 
 def ejecutar_consulta(query, params=None):
     """Para SELECT y SPs que modifican datos"""
@@ -20,7 +23,7 @@ def ejecutar_consulta(query, params=None):
     try:
         cursor.execute(query, params)
         resultados = cursor.fetchall()
-        conn.commit()  # ✅ ¡AGREGAR ESTO!
+        conn.commit()  # ✅ Importante para SPs de inserción/actualización
         return [dict(row) for row in resultados]
     except Exception as e:
         print(f"❌ Error en consulta: {e}")
@@ -29,7 +32,7 @@ def ejecutar_consulta(query, params=None):
     finally:
         cursor.close()
         conn.close()
-        
+
 def ejecutar_comando(query, params=None):
     """Para INSERT/UPDATE/DELETE - retorna filas afectadas"""
     conn = get_connection()
@@ -39,6 +42,7 @@ def ejecutar_comando(query, params=None):
         conn.commit()
         return cursor.rowcount
     except Exception as e:
+        print(f"❌ Error en comando: {e}")
         conn.rollback()
         raise e
     finally:
