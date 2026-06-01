@@ -104,5 +104,5 @@ from serv_pedidos_v2 import router as router_v2
 # from serv_pedidos_v3 import router as router_v3
 
 # ⭐ Incluir routers con prefijos de versión
-app.include_router(router_v2, prefix="/v2", tags=["Pedidos v2 (Orquestador BD)"])
-# app.include_router(router_v3, prefix="/v3", tags=["Versión 3 - BD"])
+#app.include_router(router_v2, prefix="/v2", tags=["Pedidos v2 (Orquestador BD)"])
+app.include_router(router_v3, prefix="/v3", tags=["Versión 3 - BD"])
