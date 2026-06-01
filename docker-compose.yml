@@ -1,0 +1,7 @@
+services:
+ rabbitmq:
+  image: rabbitmq:3-management
+  ports:
+   - "5672:5672" #puerto de comunicacion para el bus de mensajes
+   - "15672:15672" #puerto para acceder a la consola de la administración web 
+

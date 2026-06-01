@@ -1,0 +1,3 @@
+id_cliente,nombre,correo,direccion,telefono,fecha_registro,activo
+1,pepe,pepe@example.com,123123,stri123123ng,2026-04-14,True
+1,string,user@example.com,string,string,2026-04-14,True

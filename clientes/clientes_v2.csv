@@ -1,0 +1,2 @@
+id_cliente,nombre,correo,direccion,telefono,fecha_registro,activo
+1,Juan Pérez,juan@ejemplo.com,Calle 123,555-1234,2026-04-14,True

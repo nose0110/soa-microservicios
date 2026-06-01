@@ -1,0 +1,3 @@
+id_pedido,id_cliente,id_producto,cantidad,costo_total,estado
+1,1,1,2,30000.0,completado
+2,1,1,2,30000.0,completado
