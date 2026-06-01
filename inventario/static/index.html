@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>📋 Clientes - SOA</title>
+    <title>📦 Inventario - SOA</title>
     <style>
         body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f4f4f9; }
         .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
@@ -13,16 +13,15 @@
         .hidden { display: none; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-        th { background: #4CAF50; color: white; }
+        th { background: #FF9800; color: white; }
         .error { color: red; font-size: 0.9rem; }
         .success { color: green; font-size: 0.9rem; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>📋 Gestión de Clientes</h1>
+        <h1>📦 Gestión de Inventario</h1>
         
-        <!-- LOGIN -->
         <div id="login-section">
             <h3>🔐 Iniciar Sesión</h3>
             <input type="text" id="username" placeholder="Usuario (ej: admin)">
@@ -31,24 +30,21 @@
             <p id="login-error" class="error"></p>
         </div>
         
-        <!-- CRUD -->
         <div id="crud-section" class="hidden">
             <button onclick="logout()" style="background: #f44336; width: auto;">🚪 Cerrar Sesión</button>
-            <button onclick="cargarClientes()" style="background: #2196F3; width: auto; float: right;">🔄 Actualizar</button>
+            <button onclick="cargarInventario()" style="background: #2196F3; width: auto; float: right;">🔄 Actualizar</button>
             <br><br>
             
-            <h3>➕ Nuevo Cliente</h3>
-            <input type="text" id="nombre" placeholder="Nombre completo *">
-            <input type="email" id="correo" placeholder="Correo electrónico *">
-            <input type="text" id="direccion" placeholder="Dirección (opcional)">
-            <input type="text" id="telefono" placeholder="Teléfono (opcional)">
-            <button onclick="crearCliente()">Guardar Cliente</button>
+            <h3>➕ Nuevo Registro de Inventario</h3>
+            <input type="number" id="id_producto" placeholder="ID del Producto *">
+            <input type="number" id="cantidad" placeholder="Cantidad en Stock *">
+            <button onclick="crearRegistro()">Guardar</button>
             <p id="msg"></p>
             
-            <h3>📋 Lista de Clientes</h3>
+            <h3>📋 Lista de Inventario</h3>
             <table id="tabla">
                 <thead>
-                    <tr><th>ID</th><th>Nombre</th><th>Correo</th><th>Dirección</th><th>Teléfono</th><th>Activo</th></tr>
+                    <tr><th>ID Producto</th><th>Cantidad</th><th>Actualizado</th></tr>
                 </thead>
                 <tbody></tbody>
             </table>
@@ -62,23 +58,14 @@
             const fd = new URLSearchParams();
             fd.append('username', document.getElementById('username').value);
             fd.append('password', document.getElementById('password').value);
-            
             try {
-                const res = await fetch('/auth/token', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body: fd
-                });
-                if (!res.ok) {
-                    const err = await res.json();
-                    throw new Error(err.detail || 'Credenciales incorrectas');
-                }
+                const res = await fetch('/auth/token', { method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: fd });
+                if (!res.ok) throw new Error('Credenciales incorrectas');
                 const data = await res.json();
                 token = data.access_token;
-                
                 document.getElementById('login-section').classList.add('hidden');
                 document.getElementById('crud-section').classList.remove('hidden');
-                cargarClientes();
+                cargarInventario();
             } catch (e) {
                 document.getElementById('login-error').textContent = e.message;
             }
@@ -91,70 +78,39 @@
             document.getElementById('msg').textContent = '';
         }
 
-        async function cargarClientes() {
+        async function cargarInventario() {
             try {
-                const res = await fetch('/v2/clientes', {
-                    headers: {'Authorization': `Bearer ${token}`}
-                });
+                const res = await fetch('/v2/inventario', { headers: {'Authorization': `Bearer ${token}`} });
                 if (!res.ok) throw new Error('Error al cargar');
-                
-                const clientes = await res.json();
-                document.querySelector('#tabla tbody').innerHTML = clientes.map(c => `
-                    <tr>
-                        <td>${c.id_cliente || c.cliente_id}</td>
-                        <td>${c.nombre}</td>
-                        <td>${c.correo}</td>
-                        <td>${c.direccion || '-'}</td>
-                        <td>${c.telefono || '-'}</td>
-                        <td>${c.activo ? '✅' : '❌'}</td>
-                    </tr>
+                const datos = await res.json();
+                document.querySelector('#tabla tbody').innerHTML = datos.map(d => `
+                    <tr><td>${d.id_producto}</td><td><strong>${d.cantidad}</strong></td><td>${d.updated_at || '-'}</td></tr>
                 `).join('');
-            } catch (e) {
-                alert('Error: ' + e.message);
-            }
+            } catch (e) { alert('Error: ' + e.message); }
         }
 
-        async function crearCliente() {
+        async function crearRegistro() {
             const nuevo = {
-                nombre: document.getElementById('nombre').value,
-                correo: document.getElementById('correo').value,
-                direccion: document.getElementById('direccion').value || "",
-                telefono: document.getElementById('telefono').value || ""
+                id_producto: parseInt(document.getElementById('id_producto').value),
+                cantidad: parseInt(document.getElementById('cantidad').value)
             };
-            
             const msgEl = document.getElementById('msg');
             msgEl.textContent = 'Guardando...';
-            msgEl.className = '';
-
             try {
-                const res = await fetch('/v2/clientes', {
+                const res = await fetch('/v2/inventario', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${token}`
-                    },
+                    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify(nuevo)
                 });
-                
                 if (!res.ok) {
                     const err = await res.json();
-                    // FastAPI devuelve el error detallado en "detail"
-                    const errorMsg = Array.isArray(err.detail) 
-                        ? err.detail.map(d => `${d.loc.join('.')}: ${d.msg}`).join(', ') 
-                        : (err.detail || 'Error desconocido');
-                    throw new Error(errorMsg);
+                    throw new Error(Array.isArray(err.detail) ? err.detail[0].msg : err.detail);
                 }
-                
-                msgEl.textContent = '✅ Cliente creado exitosamente';
+                msgEl.textContent = '✅ Registro guardado';
                 msgEl.className = 'success';
-                
-                // Limpiar campos
-                document.getElementById('nombre').value = '';
-                document.getElementById('correo').value = '';
-                document.getElementById('direccion').value = '';
-                document.getElementById('telefono').value = '';
-                
-                cargarClientes();
+                document.getElementById('id_producto').value = '';
+                document.getElementById('cantidad').value = '';
+                cargarInventario();
             } catch (e) {
                 msgEl.textContent = '❌ ' + e.message;
                 msgEl.className = 'error';
