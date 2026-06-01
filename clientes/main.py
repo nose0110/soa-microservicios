@@ -17,6 +17,13 @@ from auth.security import (
     ACCESS_TOKEN_EXPIRE_MINUTES
 )
 
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/")
+def root():
+    return {"message": "Servicio activo", "web_ui": "/static/index.html", "docs": "/docs"}
+
 app = FastAPI(
     title="Departamento de Clientes",
     description="Servicio de Clientes con versionado y autenticación JWT\n\n" \

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>📋 Servicio - SOA</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 2rem auto; padding: 0 1rem; background: #f4f4f9; }
+        .card { background: white; padding: 2rem; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1 { color: #333; }
+        input, button { padding: 10px; margin: 5px 0; width: 100%; box-sizing: border-box; }
+        button { background: #4CAF50; color: white; border: none; cursor: pointer; font-weight: bold; }
+        button:hover { background: #45a049; }
+        .hidden { display: none; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background: #4CAF50; color: white; }
+        .error { color: red; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>📋 Gestión del Servicio</h1>
+        
+        <!-- LOGIN -->
+        <div id="login-section">
+            <h3>🔐 Iniciar Sesión</h3>
+            <input type="text" id="username" placeholder="Usuario (ej: admin)">
+            <input type="password" id="password" placeholder="Contraseña (ej: admin123)">
+            <button onclick="login()">Entrar</button>
+            <p id="login-error" class="error"></p>
+        </div>
+        
+        <!-- CRUD -->
+        <div id="crud-section" class="hidden">
+            <button onclick="logout()" style="background: #f44336; width: auto;">🚪 Cerrar Sesión</button>
+            <button onclick="cargarDatos()" style="background: #2196F3; width: auto; float: right;">🔄 Actualizar</button>
+            <br><br>
+            
+            <h3>➕ Nuevo Registro</h3>
+            <input type="text" id="campo1" placeholder="Dato 1 (ej: Nombre / Descripción)">
+            <input type="text" id="campo2" placeholder="Dato 2 (ej: Correo / Precio)">
+            <button onclick="crearRegistro()">Guardar</button>
+            <p id="msg" style="color: green;"></p>
+            
+            <h3>📋 Lista de Registros</h3>
+            <table id="tabla">
+                <thead><tr id="tabla-headers"></tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // ⚙️ CONFIGURA ESTO PARA CADA SERVICIO:
+        const ENDPOINT = '/v2/clientes'; // Cambiar a '/v2/productos', '/v2/inventario', etc.
+        const CAMPOS = ['id', 'nombre', 'correo']; // Cambiar a ['id_producto', 'descripcion', 'precio'] etc.
+        const PLACEHOLDERS = ['Nombre', 'Correo']; // Cambiar según el servicio
+
+        let token = '';
+
+        document.getElementById('campo1').placeholder = PLACEHOLDERS[0];
+        document.getElementById('campo2').placeholder = PLACEHOLDERS[1] || 'Dato extra';
+
+        async function login() {
+            const fd = new URLSearchParams();
+            fd.append('username', document.getElementById('username').value);
+            fd.append('password', document.getElementById('password').value);
+            
+            try {
+                const res = await fetch('/auth/token', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: fd
+                });
+                if (!res.ok) throw new Error('Credenciales incorrectas');
+                const data = await res.json();
+                token = data.access_token;
+                
+                document.getElementById('login-section').classList.add('hidden');
+                document.getElementById('crud-section').classList.remove('hidden');
+                cargarDatos();
+            } catch (e) {
+                document.getElementById('login-error').textContent = e.message;
+            }
+        }
+
+        function logout() {
+            token = '';
+            document.getElementById('crud-section').classList.add('hidden');
+            document.getElementById('login-section').classList.remove('hidden');
+        }
+
+        async function cargarDatos() {
+            try {
+                const res = await fetch(ENDPOINT, {
+                    headers: {'Authorization': `Bearer ${token}`}
+                });
+                const datos = await res.json();
+                
+                // Construir headers
+                document.getElementById('tabla-headers').innerHTML = CAMPOS.map(c => `<th>${c}</th>`).join('');
+                
+                // Construir filas
+                document.querySelector('#tabla tbody').innerHTML = datos.map(d => 
+                    `<tr>${CAMPOS.map(c => `<td>${d[c] || '-'}</td>`).join('')}</tr>`
+                ).join('');
+            } catch (e) {
+                alert('Error al cargar datos: ' + e.message);
+            }
+        }
+
+        async function crearRegistro() {
+            const nuevo = {};
+            // Mapeo simple para el ejemplo (ajusta según tu modelo Pydantic)
+            nuevo[CAMPOS[1]] = document.getElementById('campo1').value;
+            nuevo[CAMPOS[2]] = document.getElementById('campo2').value;
+            
+            try {
+                const res = await fetch(ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify(nuevo)
+                });
+                if (!res.ok) throw new Error('Error al crear');
+                document.getElementById('msg').textContent = '✅ Guardado exitosamente';
+                cargarDatos();
+            } catch (e) {
+                document.getElementById('msg').textContent = '❌ ' + e.message;
+                document.getElementById('msg').style.color = 'red';
+            }
+        }
+    </script>
+</body>
+</html>
