@@ -88,7 +88,7 @@
 
         async function cargarPedidos() {
             try {
-                const res = await fetch('/v2/pedidos', { headers: {'Authorization': `Bearer ${token}`} });
+                const res = await fetch('/v3/pedidos', { headers: {'Authorization': `Bearer ${token}`} });
                 if (!res.ok) throw new Error('Error al cargar');
                 const datos = await res.json();
                 document.querySelector('#tabla tbody').innerHTML = datos.map(d => `
@@ -114,7 +114,7 @@
             msgEl.className = '';
             
             try {
-                const res = await fetch('/v2/pedidos', {
+                const res = await fetch('/v3/pedidos', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
                     body: JSON.stringify(nuevo)
