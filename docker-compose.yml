@@ -1,7 +1,132 @@
-services:
- rabbitmq:
-  image: rabbitmq:3-management
-  ports:
-   - "5672:5672" #puerto de comunicacion para el bus de mensajes
-   - "15672:15672" #puerto para acceder a la consola de la administración web 
+version: '3.8'
 
+services:
+  # ============================================
+  # BASE DE DATOS POSTGRESQL
+  # ============================================
+  postgres:
+    image: postgres:15
+    container_name: shopnow-postgres
+    environment:
+      POSTGRES_DB: shopnow_db
+      POSTGRES_USER: shopnow
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-shopnow123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docs/database_setup.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - shopnow-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shopnow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # RABBITMQ (Mensajería Asíncrona)
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: shopnow-rabbitmq
+    ports:
+      - "5672:5672"     # Puerto AMQP
+      - "15672:15672"   # Panel de administración
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin123
+    networks:
+      - shopnow-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================
+  # SERVICIO: CLIENTES
+  # ============================================
+  clientes:
+    build: ./clientes
+    container_name: shopnow-clientes
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://shopnow:${DB_PASSWORD:-shopnow123}@postgres:5432/shopnow_db
+      PYTHON_VERSION: "3.11.8"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - shopnow-network
+
+  # ============================================
+  # SERVICIO: PRODUCTOS
+  # ============================================
+  productos:
+    build: ./productos
+    container_name: shopnow-productos
+    ports:
+      - "8011:8000"
+    environment:
+      DATABASE_URL: postgresql://shopnow:${DB_PASSWORD:-shopnow123}@postgres:5432/shopnow_db
+      PYTHON_VERSION: "3.11.8"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - shopnow-network
+
+  # ============================================
+  # SERVICIO: INVENTARIO
+  # ============================================
+  inventario:
+    build: ./inventario
+    container_name: shopnow-inventario
+    ports:
+      - "8003:8000"
+    environment:
+      DATABASE_URL: postgresql://shopnow:${DB_PASSWORD:-shopnow123}@postgres:5432/shopnow_db
+      PYTHON_VERSION: "3.11.8"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - shopnow-network
+
+  # ============================================
+  # SERVICIO: PEDIDOS (Orquestador)
+  # ============================================
+  pedidos:
+    build: ./pedidos
+    container_name: shopnow-pedidos
+    ports:
+      - "8002:8000"
+    environment:
+      DATABASE_URL: postgresql://shopnow:${DB_PASSWORD:-shopnow123}@postgres:5432/shopnow_db
+      PYTHON_VERSION: "3.11.8"
+      CLIENTES_URL: http://clientes:8000/v2/clientes
+      PRODUCTOS_URL: http://productos:8000/v2/productos
+      INVENTARIO_URL: http://inventario:8000/v2/inventario
+      RABBITMQ_URL: amqp://admin:admin123@rabbitmq:5672/
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      clientes:
+        condition: service_started
+      productos:
+        condition: service_started
+      inventario:
+        condition: service_started
+    networks:
+      - shopnow-network
+
+volumes:
+  postgres_data:
+
+networks:
+  shopnow-network:
+    driver: bridge
