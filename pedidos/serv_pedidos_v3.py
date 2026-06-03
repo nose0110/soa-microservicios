@@ -15,10 +15,9 @@ from auth.security import requerir_autenticacion, requerir_admin, TokenData
 router = APIRouter()
 
 # ⭐ URLs de los servicios externos
-CLIENTES_URL = "http://localhost:8000/v2/clientes"
-PRODUCTOS_URL = "http://localhost:8011/v3/productos"
-INVENTARIO_URL = "http://localhost:8003/v2/inventario"
-FILE_NAME = "data/pedidos_v3.csv"
+CLIENTES_URL = os.environ.get("CLIENTES_URL", "http://localhost:8000/v2/clientes")
+PRODUCTOS_URL = os.environ.get("PRODUCTOS_URL", "http://localhost:8011/v3/productos")
+INVENTARIO_URL = os.environ.get("INVENTARIO_URL", "http://localhost:8003/v2/inventario")
 # ==================== MODELOS V3 ====================
 class PedidoV2(BaseModel):
     pedido_id: int          # ← Cambiar de 'id_pedido' a 'pedido_id'
