@@ -52,12 +52,28 @@ def validar_producto(id_producto: int) -> dict:
 
 def validar_stock(id_producto: int, cantidad_requerida: int) -> bool:
     try:
-        response = requests.get(f"{INVENTARIO_URL}/{id_producto}", timeout=5)
+        print(f"🔍 Validando stock producto {id_producto} en: {INVENTARIO_URL}/{id_producto}")
+        response = requests.get(f"{INVENTARIO_URL}/{id_producto}", timeout=30)  # ⭐ Aumentado a 30 segundos
+        print(f"   📡 Status code: {response.status_code}")
+        
         if response.status_code == 200:
             inventario = response.json()
-            return int(inventario.get("cantidad", 0)) >= cantidad_requerida
+            print(f"   📦 Respuesta JSON: {inventario}")
+            
+            stock_actual = int(inventario.get("cantidad", 0))
+            print(f"   📊 Stock actual: {stock_actual} | Requerido: {cantidad_requerida}")
+            
+            resultado = stock_actual >= cantidad_requerida
+            print(f"   ✅ ¿Hay stock suficiente? {resultado}")
+            return resultado
+            
+        print(f"   ⚠️ Status != 200")
         return False
-    except:
+    except requests.exceptions.Timeout:
+        print(f"   ⏰ TIMEOUT: El servicio de inventario tardó más de 30s en responder (¿está dormido?)")
+        return False
+    except Exception as e:
+        print(f"   ❌ Error conectando a inventario: {e}")
         return False
 
 # ==================== ENDPOINTS V3 (Base de Datos) ====================
