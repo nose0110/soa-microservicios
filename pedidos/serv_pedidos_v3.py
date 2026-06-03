@@ -36,7 +36,7 @@ class PedidoUpdateV2(BaseModel):
 # ==================== Funciones auxiliares ====================
 def validar_cliente(id_cliente: int) -> bool:
     try:
-        response = requests.get(f"{CLIENTES_URL}/{id_cliente}", timeout=5)
+        response = requests.get(f"v2/{CLIENTES_URL}/{id_cliente}", timeout=5)
         return response.status_code == 200
     except:
         return False
