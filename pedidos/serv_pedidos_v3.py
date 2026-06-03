@@ -34,48 +34,94 @@ class PedidoRegistroV2(BaseModel):
 class PedidoUpdateV2(BaseModel):
     cantidad: Optional[int] = Field(None, ge=1)
 # ==================== Funciones auxiliares ====================
+# ==================== Funciones de validación con resiliencia 503 ====================
+
+class ServicioExternoCaido(Exception):
+    """Excepción personalizada para servicios caídos"""
+    pass
+
 def validar_cliente(id_cliente: int) -> bool:
     try:
-        response = requests.get(f"{CLIENTES_URL}/{id_cliente}", timeout=5)
-        return response.status_code == 200
-    except:
+        print(f" Validando cliente {id_cliente}")
+        response = requests.get(f"{CLIENTES_URL}/{id_cliente}", timeout=30)
+        
+        if response.status_code == 503:
+            raise ServicioExternoCaido("Servicio de Clientes no disponible (503)")
+        
+        if response.status_code == 200:
+            return True
+        
+        # 404 = no existe, no es error de servicio
+        if response.status_code == 404:
+            return False
+            
+        print(f"⚠️ Status inesperado: {response.status_code}")
         return False
+        
+    except ServicioExternoCaido:
+        raise  # Re-lanzar para que el endpoint la capture
+    except requests.exceptions.Timeout:
+        raise ServicioExternoCaido("Timeout conectando a Clientes (¿servicio dormido?)")
+    except requests.exceptions.ConnectionError:
+        raise ServicioExternoCaido("No se puede conectar a Clientes")
+    except Exception as e:
+        raise ServicioExternoCaido(f"Error inesperado con Clientes: {e}")
+
 
 def validar_producto(id_producto: int) -> dict:
     try:
-        response = requests.get(f"{PRODUCTOS_URL}/{id_producto}", timeout=5)
+        print(f"🔍 Validando producto {id_producto}")
+        response = requests.get(f"{PRODUCTOS_URL}/{id_producto}", timeout=30)
+        
+        if response.status_code == 503:
+            raise ServicioExternoCaido("Servicio de Productos no disponible (503)")
+        
         if response.status_code == 200:
             return response.json()
+        
+        if response.status_code == 404:
+            return None
+            
         return None
-    except:
-        return None
+        
+    except ServicioExternoCaido:
+        raise
+    except requests.exceptions.Timeout:
+        raise ServicioExternoCaido("Timeout conectando a Productos")
+    except requests.exceptions.ConnectionError:
+        raise ServicioExternoCaido("No se puede conectar a Productos")
+    except Exception as e:
+        raise ServicioExternoCaido(f"Error inesperado con Productos: {e}")
+
 
 def validar_stock(id_producto: int, cantidad_requerida: int) -> bool:
     try:
-        print(f"🔍 Validando stock producto {id_producto} en: {INVENTARIO_URL}/{id_producto}")
-        response = requests.get(f"{INVENTARIO_URL}/{id_producto}", timeout=30)  # ⭐ Aumentado a 30 segundos
-        print(f"   📡 Status code: {response.status_code}")
+        print(f"🔍 Validando stock producto {id_producto}")
+        response = requests.get(f"{INVENTARIO_URL}/{id_producto}", timeout=30)
+        
+        if response.status_code == 503:
+            raise ServicioExternoCaido("Servicio de Inventario no disponible (503)")
         
         if response.status_code == 200:
             inventario = response.json()
-            print(f"   📦 Respuesta JSON: {inventario}")
-            
             stock_actual = int(inventario.get("cantidad", 0))
-            print(f"   📊 Stock actual: {stock_actual} | Requerido: {cantidad_requerida}")
+            print(f" Stock: {stock_actual} | Requerido: {cantidad_requerida}")
+            return stock_actual >= cantidad_requerida
+        
+        if response.status_code == 404:
+            print(f"️ Producto {id_producto} no tiene registro en inventario")
+            return False
             
-            resultado = stock_actual >= cantidad_requerida
-            print(f"   ✅ ¿Hay stock suficiente? {resultado}")
-            return resultado
-            
-        print(f"   ⚠️ Status != 200")
         return False
+        
+    except ServicioExternoCaido:
+        raise
     except requests.exceptions.Timeout:
-        print(f"   ⏰ TIMEOUT: El servicio de inventario tardó más de 30s en responder (¿está dormido?)")
-        return False
+        raise ServicioExternoCaido("Timeout conectando a Inventario")
+    except requests.exceptions.ConnectionError:
+        raise ServicioExternoCaido("No se puede conectar a Inventario")
     except Exception as e:
-        print(f"   ❌ Error conectando a inventario: {e}")
-        return False
-
+        raise ServicioExternoCaido(f"Error inesperado con Inventario: {e}")
 # ==================== ENDPOINTS V3 (Base de Datos) ====================
 
 # GET /pedidos
@@ -122,64 +168,95 @@ def obtener_pedido_v2(id_pedido: int, token_data: TokenData = Depends(requerir_a
     dependencies=[Depends(requerir_autenticacion)],
     status_code=201
 )
+@router.post("/pedidos", tags=["v2 - Operaciones"], 
+             dependencies=[Depends(requerir_autenticacion)], status_code=201)
 def registrar_pedido_v2(nuevo: PedidoRegistroV2, token_data: TokenData = Depends(requerir_autenticacion)):
     """Registrar nuevo pedido en BD"""
     
-    # Validar cliente
-    if not validar_cliente(nuevo.id_cliente):
-        raise HTTPException(status_code=400, detail="Cliente no encontrado")
-    
-    # Validar producto y obtener precio
-    producto = validar_producto(nuevo.id_producto)
-    if not producto:
-        raise HTTPException(status_code=400, detail="Producto no encontrado")
-    
-    # Validar stock
-    if not validar_stock(nuevo.id_producto, nuevo.cantidad):
-        raise HTTPException(status_code=400, detail="Stock insuficiente")
-    
-    # Calcular costo total
-    precio_unitario = float(producto.get("precio", 0))
-    costo_total = precio_unitario * nuevo.cantidad
-    
-    # Registrar pedido en BD (SP rz_pedidos_agregar)
-    resultados = ejecutar_consulta(
-        "SELECT * FROM rz_pedidos_agregar(%s, %s, %s);",
-        (nuevo.id_cliente, nuevo.id_producto, nuevo.cantidad)
-    )
-    
-    if not resultados:
-        raise HTTPException(status_code=500, detail="Error al registrar pedido")
-    
-    # Actualizar inventario (restar stock)
     try:
-        inv_response = requests.get(f"{INVENTARIO_URL}/{nuevo.id_producto}", timeout=5)
-        if inv_response.status_code == 200:
-            stock_actual = int(inv_response.json().get("cantidad", 0))
-            nuevo_stock = stock_actual - nuevo.cantidad
-            requests.patch(
-                f"{INVENTARIO_URL}/{nuevo.id_producto}",
-                json={"cantidad": nuevo_stock},
-                timeout=5
-            )
-    except:
-        pass  # Si falla, el worker puede manejarlo
-    
-    # Encolar notificación
-    publicar_mensaje(QUEUES.get("pedidos", "pedidos.default"), {  # ✅ Usa .get() con fallback
-    "pedido_id": resultados[0]["pedido_id"],
-    "id_cliente": nuevo.id_cliente,
-    "id_producto": nuevo.id_producto,
-    "cantidad": nuevo.cantidad
-    })
-    
-    return {
-        "mensaje": "Pedido registrado",
-        "pedido_id": resultados[0]["pedido_id"],
-        "costo_total": costo_total,
-        "status": "success"
-    }
-
+        # 1. Validar cliente (síncrono REST)
+        if not validar_cliente(nuevo.id_cliente):
+            raise HTTPException(status_code=400, detail="Cliente no encontrado")
+        
+        # 2. Validar producto y obtener precio (síncrono REST)
+        producto = validar_producto(nuevo.id_producto)
+        if not producto:
+            raise HTTPException(status_code=400, detail="Producto no encontrado")
+        
+        # 3. Validar stock (síncrono REST)
+        if not validar_stock(nuevo.id_producto, nuevo.cantidad):
+            raise HTTPException(status_code=400, detail="Stock insuficiente")
+        
+        # Calcular costo total
+        precio_unitario = float(producto.get("precio", 0))
+        costo_total = precio_unitario * nuevo.cantidad
+        
+        # Registrar pedido en BD
+        resultados = ejecutar_consulta(
+            "SELECT * FROM rz_pedidos_agregar(%s, %s, %s);",
+            (nuevo.id_cliente, nuevo.id_producto, nuevo.cantidad)
+        )
+        
+        if not resultados:
+            raise HTTPException(status_code=500, detail="Error al registrar pedido")
+        
+        pedido_id = resultados[0]["pedido_id"]
+        
+        # ⭐ ACTUALIZAR INVENTARIO (Síncrono - por ahora)
+        try:
+            inv_response = requests.get(f"{INVENTARIO_URL}/{nuevo.id_producto}", timeout=30)
+            if inv_response.status_code == 200:
+                stock_actual = int(inv_response.json().get("cantidad", 0))
+                nuevo_stock = stock_actual - nuevo.cantidad
+                requests.patch(
+                    f"{INVENTARIO_URL}/{nuevo.id_producto}",
+                    json={"cantidad": nuevo_stock},
+                    timeout=30
+                )
+                print(f"✅ Inventario actualizado: producto {nuevo.id_producto} = {nuevo_stock}")
+        except Exception as e:
+            print(f"⚠️ No se pudo actualizar inventario automáticamente: {e}")
+            #  GUARDAR EN COLA DE PENDIENTES (simula RabbitMQ)
+            try:
+                ejecutar_consulta(
+                    "INSERT INTO pedidos_pendientes (id_cliente, id_producto, cantidad, motivo) VALUES (%s, %s, %s, %s);",
+                    (nuevo.id_cliente, nuevo.id_producto, nuevo.cantidad, "Fallo actualización inventario")
+                )
+                print(f"📥 Pedido {pedido_id} encolado para procesamiento asíncrono")
+            except:
+                pass
+        
+        # ⭐ ENCRIPTAR MENSAJE (Simulación RabbitMQ - ver Paso 2)
+        try:
+            from rabbitmq_client import publicar_mensaje, QUEUES
+            publicar_mensaje(QUEUES.get("pedidos", "pedidos.default"), {
+                "pedido_id": pedido_id,
+                "id_cliente": nuevo.id_cliente,
+                "id_producto": nuevo.id_producto,
+                "cantidad": nuevo.cantidad,
+                "costo_total": costo_total,
+                "accion": "nuevo_pedido_registrado"
+            })
+            print(f" Mensaje encolado para pedido {pedido_id}")
+        except Exception as e:
+            print(f"⚠️ RabbitMQ no disponible: {e} (El pedido ya fue registrado en BD)")
+        
+        return {
+            "mensaje": "Pedido registrado exitosamente",
+            "pedido_id": pedido_id,
+            "costo_total": costo_total,
+            "status": "success"
+        }
+        
+    except ServicioExternoCaido as e:
+        # ⭐ RESILIENCIA 503: Evita falla en cascada
+        print(f" SERVICIO CAÍDO: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail=f"Servicio dependiente no disponible. {str(e)}. El pedido NO fue registrado para evitar inconsistencias.",
+            headers={"Retry-After": "60"}  # Le dice al cliente que intente en 60s
+        )
+        
 # PATCH /pedidos/{id_pedido}
 @router.patch(
     "/pedidos/{id_pedido}",
