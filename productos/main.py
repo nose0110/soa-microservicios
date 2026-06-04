@@ -39,6 +39,21 @@ os.makedirs("static", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ⭐ ENDPOINT DE LOGIN
+@app.get("/health", tags=["Health"])
+def health_check():
+    """Verificar que el servicio está conectado a la BD"""
+    try:
+        from coneeccion import ejecutar_consulta
+        resultado = ejecutar_consulta("SELECT current_database(), current_user;")
+        return {
+            "status": "✅ ok",
+            "service": "productos",
+            "database": resultado[0]['current_database'],
+            "user": resultado[0]['current_user'],
+            "message": "Conectado a PostgreSQL en Render"
+        }
+    except Exception as e:
+        return {"status": "❌ error", "detail": str(e)}, 500
 @app.post("/auth/token", response_model=Token, tags=["Autenticación"])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     usuario = await autenticar_usuario(form_data.username, form_data.password)
